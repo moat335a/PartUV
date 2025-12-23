@@ -12,7 +12,20 @@ from pathlib import Path
 import trimesh
 import numpy as np
 
-def preprocess(mesh_path, pf_model=None, output_path=None, save_tree_file=False, save_processed_mesh=False, sample_on_faces=10, sample_batch_size=100_000, merge_vertices_epsilon=1e-7):
+
+def _downsample_faces(mesh: trimesh.Trimesh, max_faces: int | None) -> trimesh.Trimesh:
+    """Drop faces uniformly at random to keep memory in check."""
+    if max_faces is None or len(mesh.faces) <= max_faces:
+        return mesh
+    keep_idx = np.random.choice(len(mesh.faces), size=max_faces, replace=False)
+    faces_sub = mesh.faces[keep_idx]
+    unique_v, inverse = np.unique(faces_sub.reshape(-1), return_inverse=True)
+    vertices_sub = mesh.vertices[unique_v]
+    faces_sub = inverse.reshape((-1, 3))
+    return trimesh.Trimesh(vertices=vertices_sub, faces=faces_sub, process=False)
+
+
+def preprocess(mesh_path, pf_model=None, output_path=None, save_tree_file=False, save_processed_mesh=False, sample_on_faces=10, sample_batch_size=100_000, merge_vertices_epsilon=1e-7, max_faces: int | None = None):
     stem, _ = os.path.splitext(os.path.basename(mesh_path))
     if output_path is None:
         output_path = mesh_path
@@ -27,6 +40,10 @@ def preprocess(mesh_path, pf_model=None, output_path=None, save_tree_file=False,
 
     load_time = time.perf_counter()
     mesh = load_mesh_and_merge(mesh_path, epsilon=merge_vertices_epsilon)
+    before_faces = len(mesh.faces)
+    mesh = _downsample_faces(mesh, max_faces=max_faces)
+    if max_faces is not None and before_faces != len(mesh.faces):
+        print(f"Downsampled faces: {before_faces} -> {len(mesh.faces)}")
     load_time = time.perf_counter() - load_time
     fix_time = time.perf_counter()
     mesh = fix_mesh_trimesh(mesh)   

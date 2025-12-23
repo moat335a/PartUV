@@ -1,4 +1,5 @@
 import os
+import os, sys
 
 import torch
 import numpy as np
@@ -6,16 +7,14 @@ import time
 from tqdm import tqdm
 import trimesh
 
+# Ensure local PartUV package is preferred over any installed copy
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from preprocess_utils.partfield_official.run_PF import PFInferenceModel
-
-
 import partuv
 from partuv.preprocess import preprocess, save_results
-import os
-import os, sys
 from contextlib import contextmanager, redirect_stdout, redirect_stderr
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pack.eval_charts import evaluate_mesh
 from pack.pack import pack_mesh
 
@@ -58,7 +57,17 @@ def partuv_pipeline(args, pf_model=None, save_output=True):
         - output_path: path where the processed mesh and tree file will be saved.
         """
         
-        mesh, tree_filename, tree_dict, preprocess_times = preprocess(mesh_path, pf_model, output_path, save_tree_file=True, save_processed_mesh=True, sample_on_faces=10, sample_batch_size=100_000, merge_vertices_epsilon=1e-7)
+        mesh, tree_filename, tree_dict, preprocess_times = preprocess(
+            mesh_path,
+            pf_model,
+            output_path,
+            save_tree_file=True,
+            save_processed_mesh=True,
+            sample_on_faces=args.sample_on_faces,
+            sample_batch_size=args.sample_batch_size,
+            merge_vertices_epsilon=args.merge_vertices_epsilon,
+            max_faces=args.max_faces,
+        )
         V = mesh.vertices
         F = mesh.faces
         configPath = config_path
@@ -126,6 +135,10 @@ def main():
     parser.add_argument("--output_path", "-op", type=str, default=None, help="Output path.")
     parser.add_argument("--pack_method", "-pm", type=str, default="blender", choices=["blender", "uvpackmaster", "none"], help="Pack method.")
     parser.add_argument("--save_visuals", "-sv", action="store_true", default=False, help="Save visuals (such as) after packing. This will be ignored if pack_method is 'none'.")
+    parser.add_argument("--sample_on_faces", type=int, default=10, help="Samples per face for PF features; reduce to lower memory/time.")
+    parser.add_argument("--sample_batch_size", type=int, default=100_000, help="Batch size for PF sampling; reduce if you hit OOM.")
+    parser.add_argument("--merge_vertices_epsilon", type=float, default=1e-7, help="Vertex weld epsilon; increase to aggressively merge near-duplicate vertices.")
+    parser.add_argument("--max_faces", type=int, default=None, help="Optional face cap to downsample dense meshes before PF; set e.g. 200000 to save memory.")
     args = parser.parse_args()
 
     if args.output_path is None:
